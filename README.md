@@ -53,7 +53,7 @@ func main() {
 }
 ```
 
-More detailed examples are available in the examples section of the godoc.
+More detailed examples are available in the [examples](https://pkg.go.dev/github.com/Travis-Britz/irc#pkg-examples) section of the godoc.
 
 ## Docs TODO
 
