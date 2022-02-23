@@ -214,7 +214,7 @@ const (
 	CTCPAction = "_CTCP_QUERY_ACTION"
 
 	CTCPVersionQuery    = "_CTCP_QUERY_VERSION"
-	CTCPVersionReply    = "_CTCP_REPLY_ACTION"
+	CTCPVersionReply    = "_CTCP_REPLY_VERSION"
 	CTCPClientInfoQuery = "_CTCP_QUERY_CLIENTINFO"
 	CTCPClientInfoReply = "_CTCP_REPLY_CLIENTINFO"
 
