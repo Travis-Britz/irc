@@ -38,6 +38,71 @@ func TestClient_ConnectAndRun(t *testing.T) {
 
 }
 
+func TestClient_pongReply(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	var ponged bool
+	server := irctest.NewServer()
+	server.Handler = irc.HandlerFunc(func(w irc.MessageWriter, m *irc.Message) {
+		if m.Command == "PONG" && m.Params.Get(1) == "123456789" {
+			ponged = true
+			server.Close()
+		}
+	})
+	defer server.Close()
+	go server.WriteString("PING :123456789")
+	client := &irc.Client{Nickname: "bot"}
+	client.DialFn = func() (io.ReadWriteCloser, error) { return server, nil }
+	err := client.ConnectAndRun(ctx, nil)
+	if err != io.EOF {
+		t.Errorf("expected client to exit with EOF; got: %v", err)
+	}
+	if !ponged {
+		t.Errorf("PING: client never responded with PONG")
+	}
+
+}
+
+func TestClient_ctcpRewrite(t *testing.T) {
+	client, server, done := setup()
+	var action, reply bool
+	defer done()
+	go server.WriteString(":nick PRIVMSG bot :\x01ACTION slaps bot\x01")
+	go server.WriteString(":nick NOTICE bot :\x01VERSION mIRC v6.9\x01")
+	handler := irc.HandlerFunc(func(w irc.MessageWriter, m *irc.Message) {
+		if m.Command == irc.CTCPAction && m.Params.Get(2) == "slaps bot" {
+			action = true
+		}
+		if m.Command == irc.CTCPVersionReply && m.Params.Get(2) == "mIRC v6.9" {
+			reply = true
+		}
+		if action && reply {
+			done()
+		}
+	})
+	_ = client.ConnectAndRun(context.Background(), handler)
+	if !action {
+		t.Errorf("expected ACTION messages to be rewritten")
+	}
+	if !reply {
+		t.Errorf("expected VERSION reply messages to be rewritten")
+	}
+}
+
+func TestNewCTCPCmd(t *testing.T) {
+	fn := irc.NewCTCPCmd("ACTION")
+	if irc.CTCPAction != fn {
+		t.Errorf("expected NewCTCPCmd to match CTCPAction constant; got %q and %q", irc.CTCPAction, fn)
+	}
+}
+
+func TestNewCTCPReply(t *testing.T) {
+	fn := irc.NewCTCPReplyCmd("VERSION")
+	if irc.CTCPVersionReply != fn {
+		t.Errorf("expected NewCTCPCmd to match CTCPAction constant; got %q and %q", irc.CTCPVersionReply, fn)
+	}
+}
+
 func newServer() *irctest.Server {
 	s := irctest.NewServer()
 	state := struct {
@@ -92,11 +157,14 @@ func newServer() *irctest.Server {
 	return s
 }
 
-type connStatus int
-
-const (
-	statusDisconnected connStatus = iota
-	statusRegistering
-	statusRegistered
-	statusConnected
-)
+func setup() (client *irc.Client, server *irctest.Server, done context.CancelFunc) {
+	server = irctest.NewServer()
+	client = &irc.Client{Nickname: "bot"}
+	client.DialFn = func() (io.ReadWriteCloser, error) {
+		return server, nil
+	}
+	var ctx context.Context
+	ctx, done = context.WithTimeout(context.Background(), 1*time.Second)
+	go func() { <-ctx.Done(); done(); server.Close() }()
+	return
+}

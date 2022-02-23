@@ -81,8 +81,10 @@ func (s *Server) WriteMessage(m encoding.TextMarshaler) {
 }
 
 func (s *Server) read() {
+	if s.Handler == nil {
+		s.Handler = irc.HandlerFunc(func(w irc.MessageWriter, m *irc.Message) {})
+	}
 	scanner := bufio.NewScanner(s.recvReader)
-
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		m := new(irc.Message)
