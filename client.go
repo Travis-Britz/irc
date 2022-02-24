@@ -228,17 +228,41 @@ func (c *Client) ConnectAndRun(ctx context.Context, h Handler) error {
 }
 
 func (c *Client) mainLoop(ctx context.Context, pinger *pingHandler) {
-	// todo: move the message parsing into the reader so that can run concurrently with the main handler loop
-	readLine := c.startReading(ctx)
-
+	messages := c.startReading(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case l, ok := <-readLine:
+		case m, ok := <-messages:
 			if !ok {
 				c.exit(errors.New("read channel closed"))
 				return
+			}
+			c.handler.SpeakIRC(c, m)
+		case <-time.After(2 * time.Minute):
+			// using time.After() for every line read from the connection probably isn't good,
+			// but it can be cleaned up later without breaking any interfaces or behavior
+			pinger.ping(ctx, c, "TIMEOUTCHECK")
+		}
+	}
+
+}
+
+func (c *Client) startReading(ctx context.Context) <-chan *Message {
+	// a channel of pointers might not be as desirable as a channel of Message,
+	// but since a message's Params and Tags fields are reference types anyway,
+	// at least this way it's clear that messages are never really safely passed as copies.
+	messages := make(chan *Message, 10)
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		defer close(messages)
+
+		s := bufio.NewScanner(c.conn)
+		for s.Scan() {
+			l := s.Bytes()
+			if len(l) == 0 {
+				continue
 			}
 			m := new(Message)
 			m.IncludePrefix()
@@ -255,38 +279,16 @@ func (c *Client) mainLoop(ctx context.Context, pinger *pingHandler) {
 			if (m.Source == Prefix{}) {
 				m.Source.Host = c.state.server
 			}
-			c.handler.SpeakIRC(c, m)
-		case <-time.After(2 * time.Minute):
-			// using time.After() for every line read from the connection probably isn't good,
-			// but it can be cleaned up later without breaking any interfaces or behavior
-			pinger.ping(ctx, c, "TIMEOUTCHECK")
-		}
-	}
 
-}
-
-func (c *Client) startReading(ctx context.Context) <-chan []byte {
-	lines := make(chan []byte)
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-		defer close(lines)
-
-		s := bufio.NewScanner(c.conn)
-		for s.Scan() {
-			l := s.Bytes()
-			if len(l) == 0 {
-				continue
-			}
 			select {
 			case <-ctx.Done():
-				// the main loop could have returned before the reader, so we need another way out so that lines <- l doesn't block.
+				// the main loop could have returned before the reader, so we need another way out so that messages <- l doesn't block.
 				// if the loop is sitting inside s.Scan() we won't actually be able to read from ctx.Done() until another
 				// line is read from the connection. the ping timeout will usually trigger this eventually from idle connections,
 				// (and if the main loop already exited then it will always select the ctx.Done() case)
 				// but to exit in a timely manner the connection will need to be closed to break s.Scan().
 				return
-			case lines <- l:
+			case messages <- m:
 			}
 		}
 		err := s.Err()
@@ -299,7 +301,7 @@ func (c *Client) startReading(ctx context.Context) <-chan []byte {
 			c.exit(err)
 		}
 	}()
-	return lines
+	return messages
 }
 
 // exit requests the client to exit and return with err. Only the first such error
