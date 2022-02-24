@@ -89,6 +89,36 @@ func TestClient_ctcpRewrite(t *testing.T) {
 	}
 }
 
+func TestClient_nickTracker(t *testing.T) {
+	client, server, done := setup()
+	client.Nickname = "nick1"
+	tested := 0
+	defer done()
+	// send all three lines in one string to ensure they run in order instead of sending multiple go writestring
+	go server.WriteString(":irc.example.com NOTICE nick1 :test1\r\n:nick1 NICK nick2\r\n:irc.example.com NOTICE nick2 :test2\r\n")
+	handler := irc.HandlerFunc(func(w irc.MessageWriter, m *irc.Message) {
+		if m.Command == "NOTICE" && m.Params.Get(2) == "test1" {
+			tested++
+			if !client.Nick().Is("nick1") {
+				t.Errorf("expected client nickname to match nick1; got %q", client.Nick())
+			}
+			return
+		}
+		if m.Command == "NOTICE" && m.Params.Get(2) == "test2" {
+			defer done()
+			tested++
+			if !client.Nick().Is("nick2") {
+				t.Errorf("expected client to report nickname as %q; got %q", "nick2", client.Nick())
+			}
+			return
+		}
+	})
+	_ = client.ConnectAndRun(context.Background(), handler)
+	if tested != 2 {
+		t.Errorf("expected 2 tests to be run; only %d ran", tested)
+	}
+}
+
 func TestNewCTCPCmd(t *testing.T) {
 	fn := irc.NewCTCPCmd("ACTION")
 	if irc.CTCPAction != fn {
