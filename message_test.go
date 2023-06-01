@@ -1,20 +1,22 @@
-package irc
+package irc_test
 
 import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/Travis-Britz/irc"
 )
 
-func newMessage(tags map[string]string, prefix struct{ nick, user, host string }, command Command, params []string) *Message {
-	p := make(Params, 0, len(params))
+func newMessage(tags map[string]string, prefix struct{ nick, user, host string }, command irc.Command, params []string) *irc.Message {
+	p := make(irc.Params, 0, len(params))
 	for _, pa := range params {
 		p = append(p, pa)
 	}
-	return &Message{
+	return &irc.Message{
 		Tags: tags,
-		Source: Prefix{
-			Nickname(prefix.nick),
+		Source: irc.Prefix{
+			irc.Nickname(prefix.nick),
 			prefix.user,
 			prefix.host},
 		Command: command,
@@ -22,13 +24,13 @@ func newMessage(tags map[string]string, prefix struct{ nick, user, host string }
 	}
 }
 
-func assertMessageEquals(t *testing.T, expected *Message, got *Message) {
+func assertMessageEquals(t *testing.T, expected *irc.Message, got *irc.Message) {
 	assertTagsEqual(t, expected.Tags, got.Tags)
 	assertPrefixEqual(t, expected.Source, got.Source)
 	assertCommandEquals(t, expected.Command, got.Command)
 	assertParamsEqual(t, expected.Params, got.Params)
 }
-func assertTagsEqual(t *testing.T, expected Tags, got Tags) {
+func assertTagsEqual(t *testing.T, expected irc.Tags, got irc.Tags) {
 	if len(expected) != len(got) {
 		t.Errorf("maps didn't match todo rename this error idfk")
 	}
@@ -46,18 +48,18 @@ func assertTagsEqual(t *testing.T, expected Tags, got Tags) {
 		}
 	}
 }
-func assertPrefixEqual(t *testing.T, expected Prefix, got Prefix) {
+func assertPrefixEqual(t *testing.T, expected irc.Prefix, got irc.Prefix) {
 	if expected.Nick != got.Nick || expected.User != got.User || expected.Host != got.Host {
 		t.Errorf("prefix didn't match; got %q wanted %q", got, expected)
 	}
 }
-func assertCommandEquals(t *testing.T, expected Command, got Command) {
+func assertCommandEquals(t *testing.T, expected irc.Command, got irc.Command) {
 
-	if !got.is(expected) {
+	if !strings.EqualFold(string(got), string(expected)) {
 		t.Errorf("command didn't match; got %q wanted %q", got, expected)
 	}
 }
-func assertParamsEqual(t *testing.T, expected Params, got Params) {
+func assertParamsEqual(t *testing.T, expected irc.Params, got irc.Params) {
 
 	if len(got) != len(expected) {
 		t.Errorf("actual slice(%#v)(%d) was not the same length as expected slice(%#v)(%d)", got, len(got), expected, len(expected))
@@ -69,8 +71,8 @@ func assertParamsEqual(t *testing.T, expected Params, got Params) {
 		}
 	}
 }
-func fromBytes(b []byte) (*Message, error) {
-	m := &Message{}
+func fromBytes(b []byte) (*irc.Message, error) {
+	m := &irc.Message{}
 	err := m.UnmarshalText(b)
 	return m, err
 }
@@ -140,14 +142,14 @@ func TestParseMessage(t *testing.T) {
 
 	var commands = []struct {
 		raw      string
-		expected Command
+		expected irc.Command
 	}{
-		{"001", RplWelcome},
-		{"PRIVMSG", CmdPrivmsg},
-		{"Privmsg", CmdPrivmsg},
-		{"privmsg", CmdPrivmsg},
-		{"privmsg", Command("PRIVMSG")},
-		{"PRIVMSG", Command("privmsg")},
+		{"001", irc.RplWelcome},
+		{"PRIVMSG", irc.CmdPrivmsg},
+		{"Privmsg", irc.CmdPrivmsg},
+		{"privmsg", irc.CmdPrivmsg},
+		{"privmsg", irc.Command("PRIVMSG")},
+		{"PRIVMSG", irc.Command("privmsg")},
 	}
 
 	var params = []struct {
